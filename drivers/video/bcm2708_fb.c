@@ -73,6 +73,23 @@ struct bcm2708_fb {
 
 #define to_bcm2708(info)	container_of(info, struct bcm2708_fb, fb)
 
+/* structs for mailbox property interface */
+
+struct vc_msg_tag_pan {
+	uint32_t tag_id;		/* the message id */
+	uint32_t buffer_size;		/* size of the buffer (8 bytes) */
+	uint32_t data_size;		/* size of data (8 bytes) */
+	uint32_t xoffset;
+	uint32_t yoffset;
+};
+
+struct vc_msg_pan {
+	uint32_t msg_size;		/* sizeof(struct vc_msg_pan) */
+	uint32_t request_code;
+	struct vc_msg_tag_pan tag;	/* the tag structure above to make */
+	uint32_t end_tag;		/* an end identifier (NULL) */
+};
+
 static int bcm2708_fb_set_bitfields(struct fb_var_screeninfo *var)
 {
 	int ret = 0;
@@ -454,6 +471,26 @@ static void bcm2708_fb_imageblit(struct fb_info *info,
 	cfb_imageblit(info, image);
 }
 
+static int bcm2708_fb_pan_display(struct fb_var_screeninfo *var,
+			       struct fb_info *info)
+{
+	int ret;
+	struct vc_msg_pan msg = {0};
+
+	msg.msg_size = sizeof(msg);
+	msg.tag.tag_id = VCMSG_SET_VIRTUAL_OFFSET;
+	msg.tag.buffer_size = 8;
+	msg.tag.data_size = 8;
+	msg.tag.xoffset = var->xoffset;
+	msg.tag.yoffset = var->yoffset;
+	ret = bcm_mailbox_property(&msg, sizeof(msg));
+
+	return (ret == 0
+		&& msg.tag.xoffset == var->xoffset
+		&& msg.tag.yoffset == var->yoffset) ? 0 : -EINVAL;
+}
+
+
 static struct fb_ops bcm2708_fb_ops = {
 	.owner = THIS_MODULE,
 	.fb_check_var = bcm2708_fb_check_var,
@@ -463,6 +500,7 @@ static struct fb_ops bcm2708_fb_ops = {
 	.fb_fillrect = bcm2708_fb_fillrect,
 	.fb_copyarea = bcm2708_fb_copyarea,
 	.fb_imageblit = bcm2708_fb_imageblit,
+	.fb_pan_display = bcm2708_fb_pan_display,
 };
 
 static int fbwidth = 800;	/* module parameter */
@@ -493,8 +531,8 @@ static int bcm2708_fb_register(struct bcm2708_fb *fb)
 	strncpy(fb->fb.fix.id, bcm2708_name, sizeof(fb->fb.fix.id));
 	fb->fb.fix.type = FB_TYPE_PACKED_PIXELS;
 	fb->fb.fix.type_aux = 0;
-	fb->fb.fix.xpanstep = 0;
-	fb->fb.fix.ypanstep = 0;
+	fb->fb.fix.xpanstep = 1;
+	fb->fb.fix.ypanstep = 1;
 	fb->fb.fix.ywrapstep = 0;
 	fb->fb.fix.accel = FB_ACCEL_NONE;
 
